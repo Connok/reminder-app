@@ -59,7 +59,7 @@ unsubForm.addEventListener("submit", async (e) => {
 
   try {
     const response = await fetch("/api/unsubscribe", {
-      method: "DELETE", // We use HTTP DELETE for removing records
+      method: "DELETE",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email: email }),
     });

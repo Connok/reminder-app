@@ -1,6 +1,7 @@
 require("dotenv").config();
 const express = require("express");
 const nodemailer = require("nodemailer");
+const mongoose = require("mongoose"); // Load Mongoose database driver
 
 const app = express();
 const PORT = 3000;
@@ -8,10 +9,32 @@ const PORT = 3000;
 app.use(express.json());
 app.use(express.static("public"));
 
-// 🟢 NEW: Object dictionary to keep track of active background timers by email
-// Format looks like: { "connor@email.com": timerIDReference }
+//  OBJECT DICTIONARY TO HOLD LIVE RUNTIME TIMEOUT TIMERS
 let activeStreams = {};
 
+//  CONNECT TO CLOUD MONGO DATABASE
+mongoose
+  .connect(process.env.MONGO_URI)
+  .then(async () => {
+    console.log("🍃 MongoDB Cloud Database Connected Successfully.");
+    // FAULT TOLERANCE BOOT-UP: Automatically respawn active loops on boot
+    await recoverActiveStreamsOnBoot();
+  })
+  .catch((err) =>
+    console.error("❌ Cloud Database connection failure:", err.message),
+  );
+
+//  DEFINE THE PORTFOLIO DATA SCHEMA
+const subscriberSchema = new mongoose.Schema({
+  email: { type: String, required: true, unique: true },
+  customText: { type: String, required: true },
+  minMinutes: { type: Number, required: true },
+  maxMinutes: { type: Number, required: true },
+  createdAt: { type: Date, default: Date.now },
+});
+const Subscriber = mongoose.model("Subscriber", subscriberSchema);
+
+// Configure your secure Gmail transmitter
 const transporter = nodemailer.createTransport({
   service: "gmail",
   auth: {
@@ -20,13 +43,13 @@ const transporter = nodemailer.createTransport({
   },
 });
 
-// THE CUSTOM TIMER ENGINE
+//  THE CUSTOM TIMER LOOP INJECTOR
 const startCustomAlertStream = (email, textMessage, minMin, maxMin) => {
   const runStreamCycle = async () => {
-    // Defensive check: If the user unsubscribed while this function was sleeping, stop immediately!
+    // Defensive check: verify they still exist inside the live streaming tracking dictionary
     if (!activeStreams[email]) {
       console.log(
-        `🛑 Stream loop execution halted for [${email}] because they unsubscribed.`,
+        `🛑 Stream loop execution halted for [${email}] (Unsubscribed).`,
       );
       return;
     }
@@ -48,7 +71,6 @@ const startCustomAlertStream = (email, textMessage, minMin, maxMin) => {
         error.message,
       );
     } finally {
-      // Check again if they unsubscribed during the email transmission
       if (!activeStreams[email]) return;
 
       const randomMs =
@@ -57,7 +79,6 @@ const startCustomAlertStream = (email, textMessage, minMin, maxMin) => {
         `⏳ [SNOOZE] Stream for [${email}] sleeping. Next alert: "${textMessage}" in ${(randomMs / 1000 / 60).toFixed(1)} mins...\n`,
       );
 
-      // 🟢 CRITICAL: Overwrite the active tracking pointer with the new timeout ID reference
       activeStreams[email] = setTimeout(runStreamCycle, randomMs);
     }
   };
@@ -65,59 +86,103 @@ const startCustomAlertStream = (email, textMessage, minMin, maxMin) => {
   const initialDelay =
     Math.floor(Math.random() * (maxMin - minMin + 1) + minMin) * 60 * 1000;
   console.log(
-    `🚀 [STREAM INITIALIZED] Custom cycle mapped for ${email}. First drop in ${(initialDelay / 1000 / 60).toFixed(1)} mins...`,
+    `🚀 [STREAM STANDBY] Loop mapped for ${email}. First drop in ${(initialDelay / 1000 / 60).toFixed(1)} mins...`,
   );
 
-  // 🟢 CRITICAL: Save the initial execution ID timer into our tracking object dictionary
   activeStreams[email] = setTimeout(runStreamCycle, initialDelay);
 };
 
-// 1. WEB API REGISTRATION ROUTE
+// 5. BOOT-UP RECOVERY ENGINE
+const recoverActiveStreamsOnBoot = async () => {
+  try {
+    // Look into the database and pull every single active subscriber record
+    const activeUsers = await Subscriber.find({});
+
+    if (activeUsers.length === 0) {
+      console.log(
+        "ℹ️ Staging Server check: No active subscriber profiles stored in database collections.",
+      );
+      return;
+    }
+
+    console.log(
+      `🔄 System Recovery: Found ${activeUsers.length} subscribers in cloud collections. Re-initializing streams...`,
+    );
+
+    for (const user of activeUsers) {
+      activeStreams[user.email] = true; // Allocate a key inside tracking pointer
+      startCustomAlertStream(
+        user.email,
+        user.customText,
+        user.minMinutes,
+        user.maxMinutes,
+      );
+    }
+  } catch (error) {
+    console.error("❌ Boot recovery routine crashed:", error.message);
+  }
+};
+
+//  WEB API REGISTRATION ROUTE (Writes to Cloud DB)
 app.post("/api/register", async (req, res) => {
   const { email, customText, minMinutes, maxMinutes } = req.body;
 
   if (!email || !customText || !minMinutes || !maxMinutes) {
-    return res
-      .status(400)
-      .json({
-        success: false,
-        error: "All configuration inputs are required.",
-      });
+    return res.status(400).json({
+      success: false,
+      error: "All configuration inputs are required.",
+    });
   }
 
-  // Check if they are already tracking an active stream
   if (activeStreams[email]) {
-    return res
-      .status(400)
-      .json({
-        success: false,
-        error: "An active alert stream is already running for this email!",
-      });
+    return res.status(400).json({
+      success: false,
+      error: "An active alert stream is already running for this email!",
+    });
   }
 
   try {
-    console.log(`➕ Processing registration configuration for: ${email}`);
+    console.log(
+      `🍃 Database operation: Writing new subscriber record for ${email}`,
+    );
+
+    // Save user settings directly into MongoDB Cloud Collections
+    await Subscriber.create({
+      email,
+      customText,
+      minMinutes,
+      maxMinutes,
+    });
+
     await transporter.sendMail({
       from: process.env.EMAIL_USER,
       to: email,
       subject: "⚙️ Schedule Active!",
-      text: `Hello! Your custom tracking stream ("${customText}") has been activated.`,
+      text: `Hello! Your custom tracking stream ("${customText}") has been activated and saved to our database servers.`,
     });
 
-    // Initialize tracking container key to tell our thread it is allowed to run
+    // Toggle tracking loop and initialize stream instance
     activeStreams[email] = true;
     startCustomAlertStream(email, customText, minMinutes, maxMinutes);
 
     res.status(200).json({ success: true });
   } catch (error) {
-    console.error("❌ Registration stream routing error:", error.message);
-    res
-      .status(500)
-      .json({ success: false, error: "Email backend pipeline failure." });
+    console.error("❌ Registration routing error:", error.message);
+    if (error.code === 11000) {
+      return res.status(400).json({
+        success: false,
+        error:
+          "Email configuration constraint violation: Profile already exists.",
+      });
+    }
+    res.status(500).json({
+      success: false,
+      error: "Database persistence pipeline failure.",
+    });
   }
 });
 
-// 2. 🟢 NEW: WEB API UNSUBSCRIBE ROUTE (Kills background loop timers)
+//  WEB API UNSUBSCRIBE ROUTE (Removes from Cloud DB)
 app.delete("/api/unsubscribe", async (req, res) => {
   const { email } = req.body;
 
@@ -127,43 +192,43 @@ app.delete("/api/unsubscribe", async (req, res) => {
       .json({ success: false, error: "Email address is required." });
   }
 
-  // Check if the email actually exists in our active tracking system
-  if (!activeStreams[email]) {
-    return res
-      .status(404)
-      .json({
-        success: false,
-        error: "No active scheduling stream found for this email address.",
-      });
-  }
-
   try {
-    console.log(`🗑️ Processing unsubscribe request for: ${email}`);
+    console.log(`🗑️ Processing unsubscribe pipeline for: ${email}`);
 
-    // ⚡ THE MAGIC: Pull down the saved timer pointer reference and completely shut off the clock cycle!
-    clearTimeout(activeStreams[email]);
+    // Pull the record completely out of MongoDB Atlas
+    const deletedUser = await Subscriber.findOneAndDelete({ email: email });
 
-    // Delete their reference index out of our active tracking system entirely
-    delete activeStreams[email];
+    if (!deletedUser) {
+      return res.status(404).json({
+        success: false,
+        error: "No database record matching that subscriber email found.",
+      });
+    }
+
+    // Shut off the active clock execution loop tracking thread
+    if (activeStreams[email]) {
+      clearTimeout(activeStreams[email]);
+      delete activeStreams[email];
+    }
 
     console.log(
-      `🚫 Background scheduling loop permanently terminated for [${email}].`,
+      `🚫 Background scheduling loop permanently terminated for [${email}]. Data deleted.`,
     );
 
-    // Send a polite text confirmation email letting them know alerts have ended
     await transporter.sendMail({
       from: process.env.EMAIL_USER,
       to: email,
       subject: "🚫 Alerts Cancelled",
-      text: "Hello! This email confirms that your custom reminder scheduling stream has been deactivated and removed from our active servers.",
+      text: "Hello! This email confirms that your custom reminder scheduling stream has been permanently removed from our active database servers.",
     });
 
     res.status(200).json({ success: true });
   } catch (error) {
-    console.error("❌ Unsubscribe pipeline processing error:", error.message);
-    res
-      .status(500)
-      .json({ success: false, error: "Failed to process cancel operation." });
+    console.error("❌ Unsubscribe database execution error:", error.message);
+    res.status(500).json({
+      success: false,
+      error: "Failed to process cancel operation inside cloud databanks.",
+    });
   }
 });
 
