@@ -1,0 +1,140 @@
+body {
+  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  /* 💜 Calming soft lavender-to-purple background gradient */
+  background: linear-gradient(135deg, #f3e8ff 0%, #e9d5ff 100%);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+  margin: 0;
+}
+
+.container {
+  background: white;
+  padding: 2.5rem;
+  border-radius: 16px;
+  box-shadow: 0 10px 25px rgba(107, 33, 168, 0.04); /* Subtle purple shadow tint */
+  text-align: center;
+  max-width: 400px;
+  width: 100%;
+}
+
+h1 {
+  /* 🔮 Deep professional amethyst purple */
+  color: #6b21a8;
+  margin-bottom: 0.5rem;
+}
+
+p {
+  color: #7e22ce;
+  opacity: 0.8;
+  font-size: 0.95rem;
+  margin-bottom: 2rem;
+}
+
+/* Base style for all text input types */
+input[type="email"],
+input[type="text"],
+input[type="number"] {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  border: 2px solid #e9d5ff; /* Soft violet border lines */
+  border-radius: 8px;
+  font-size: 1rem;
+  box-sizing: border-box;
+  margin-bottom: 1.25rem;
+  transition:
+    border-color 0.2s,
+    box-shadow 0.2s;
+}
+
+input[type="email"]:focus,
+input[type="text"]:focus,
+input[type="number"]:focus {
+  outline: none;
+  border-color: #a855f7; /* Vibrant purple focus ring */
+  box-shadow: 0 0 0 3px rgba(168, 85, 247, 0.15);
+}
+
+/* Layout row that houses the two time fields side-by-side */
+.time-row {
+  display: flex;
+  gap: 15px;
+  margin-bottom: 1.25rem;
+}
+
+/* Standard flex container for keeping labels stacked on top of inputs */
+.input-group {
+  flex: 1;
+  text-align: left;
+}
+
+/* Clean typography rule for field labels */
+.field-label {
+  font-size: 0.8rem;
+  color: #7e22ce;
+  font-weight: bold;
+  display: block;
+  margin-bottom: 4px;
+}
+
+/* Re-adjust the spacing for inputs nested inside our sub-groups */
+.input-group input[type="number"] {
+  margin-bottom: 0;
+}
+
+button {
+  width: 100%;
+  /* 🔮 Royal Purple base color */
+  background: #7c3aed;
+  color: white;
+  border: none;
+  padding: 0.75rem;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-weight: bold;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+button:hover {
+  /* ⚡ Deep Plum highlight on hover */
+  background: #6d28d9;
+}
+
+#statusMessage {
+  margin-top: 1rem;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+/* ... keep everything above the exact same ... */
+
+/* 🟢 NEW: Unsubscribe container card divider line and styling wrapper */
+.unsubscribe-box {
+  margin-top: 2.5rem;
+  padding-top: 2rem;
+  border-top: 2px dashed #e9d5ff; /* Sleek dashed separator line */
+}
+
+.unsubscribe-box h2 {
+  font-size: 1.1rem;
+  color: #7e22ce;
+  margin-bottom: 1rem;
+  font-weight: bold;
+}
+
+/* Secondary silver-slate layout button style */
+.btn-secondary {
+  background: #94a3b8 !important;
+}
+
+.btn-secondary:hover {
+  background: #64748b !important;
+}
+
+#unsubStatusMessage {
+  margin-top: 1rem;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
