@@ -4,27 +4,27 @@ const nodemailer = require("nodemailer");
 const mongoose = require("mongoose"); // Load Mongoose database driver
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000; // Render sets process.env.PORT automatically
 
 app.use(express.json());
 app.use(express.static("public"));
 
-//  OBJECT DICTIONARY TO HOLD LIVE RUNTIME TIMEOUT TIMERS
+// 1. OBJECT DICTIONARY TO HOLD LIVE RUNTIME TIMEOUT TIMERS
 let activeStreams = {};
 
-//  CONNECT TO CLOUD MONGO DATABASE
+// 2. CONNECT TO CLOUD MONGO DATABASE
 mongoose
   .connect(process.env.MONGO_URI)
   .then(async () => {
     console.log("🍃 MongoDB Cloud Database Connected Successfully.");
-    // FAULT TOLERANCE BOOT-UP: Automatically respawn active loops on boot
+    // 🚀 FAULT TOLERANCE BOOT-UP: Automatically respawn active loops on boot
     await recoverActiveStreamsOnBoot();
   })
   .catch((err) =>
     console.error("❌ Cloud Database connection failure:", err.message),
   );
 
-//  DEFINE THE PORTFOLIO DATA SCHEMA
+// 3. DEFINE THE PORTFOLIO DATA SCHEMA
 const subscriberSchema = new mongoose.Schema({
   email: { type: String, required: true, unique: true },
   customText: { type: String, required: true },
@@ -43,7 +43,7 @@ const transporter = nodemailer.createTransport({
   },
 });
 
-//  THE CUSTOM TIMER LOOP INJECTOR
+// 4. THE CUSTOM TIMER LOOP INJECTOR
 const startCustomAlertStream = (email, textMessage, minMin, maxMin) => {
   const runStreamCycle = async () => {
     // Defensive check: verify they still exist inside the live streaming tracking dictionary
@@ -71,6 +71,7 @@ const startCustomAlertStream = (email, textMessage, minMin, maxMin) => {
         error.message,
       );
     } finally {
+      // Check again if they unsubscribed during the email transmission
       if (!activeStreams[email]) return;
 
       const randomMs =
@@ -123,23 +124,31 @@ const recoverActiveStreamsOnBoot = async () => {
   }
 };
 
-//  WEB API REGISTRATION ROUTE (Writes to Cloud DB)
+// 6. WEB API REGISTRATION ROUTE (Writes to Cloud DB)
 app.post("/api/register", async (req, res) => {
   const { email, customText, minMinutes, maxMinutes } = req.body;
 
   if (!email || !customText || !minMinutes || !maxMinutes) {
-    return res.status(400).json({
-      success: false,
-      error: "All configuration inputs are required.",
-    });
+    return res
+      .status(400)
+      .json({
+        success: false,
+        error: "All configuration inputs are required.",
+      });
   }
 
   if (activeStreams[email]) {
-    return res.status(400).json({
-      success: false,
-      error: "An active alert stream is already running for this email!",
-    });
+    return res
+      .status(400)
+      .json({
+        success: false,
+        error: "An active alert stream is already running for this email!",
+      });
   }
+
+  // Convert text inputs into clean whole numbers before sending them to the timer engine
+  const parsedMin = parseInt(minMinutes);
+  const parsedMax = parseInt(maxMinutes);
 
   try {
     console.log(
@@ -150,8 +159,8 @@ app.post("/api/register", async (req, res) => {
     await Subscriber.create({
       email,
       customText,
-      minMinutes,
-      maxMinutes,
+      minMinutes: parsedMin,
+      maxMinutes: parsedMax,
     });
 
     await transporter.sendMail({
@@ -163,26 +172,30 @@ app.post("/api/register", async (req, res) => {
 
     // Toggle tracking loop and initialize stream instance
     activeStreams[email] = true;
-    startCustomAlertStream(email, customText, minMinutes, maxMinutes);
+    startCustomAlertStream(email, customText, parsedMin, parsedMax);
 
     res.status(200).json({ success: true });
   } catch (error) {
     console.error("❌ Registration routing error:", error.message);
     if (error.code === 11000) {
-      return res.status(400).json({
-        success: false,
-        error:
-          "Email configuration constraint violation: Profile already exists.",
-      });
+      return res
+        .status(400)
+        .json({
+          success: false,
+          error:
+            "Email configuration constraint violation: Profile already exists.",
+        });
     }
-    res.status(500).json({
-      success: false,
-      error: "Database persistence pipeline failure.",
-    });
+    res
+      .status(500)
+      .json({
+        success: false,
+        error: "Database persistence pipeline failure.",
+      });
   }
 });
 
-//  WEB API UNSUBSCRIBE ROUTE (Removes from Cloud DB)
+// 7. 🟢 CLOUD-OPTIMIZED WEB API UNSUBSCRIBE ROUTE (Removes from Cloud DB & safely kills timers)
 app.delete("/api/unsubscribe", async (req, res) => {
   const { email } = req.body;
 
@@ -193,23 +206,31 @@ app.delete("/api/unsubscribe", async (req, res) => {
   }
 
   try {
-    console.log(`🗑️ Processing unsubscribe pipeline for: ${email}`);
+    console.log(`🗑️ Processing cloud unsubscribe pipeline for: ${email}`);
 
-    // Pull the record completely out of MongoDB Atlas
+    // 1. DEFENSIVE STEP: Instantly halt any active background clocks in memory first
+    if (activeStreams[email]) {
+      clearTimeout(activeStreams[email]);
+      // Set to false instead of deleting immediately so sleeping functions know to stop
+      activeStreams[email] = false;
+    }
+
+    // 2. DATABASE STEP: Pull the record completely out of MongoDB Atlas
     const deletedUser = await Subscriber.findOneAndDelete({ email: email });
 
     if (!deletedUser) {
-      return res.status(404).json({
-        success: false,
-        error: "No database record matching that subscriber email found.",
-      });
+      // Clean up memory slot if user wasn't in DB
+      delete activeStreams[email];
+      return res
+        .status(404)
+        .json({
+          success: false,
+          error: "No database record matching that subscriber email found.",
+        });
     }
 
-    // Shut off the active clock execution loop tracking thread
-    if (activeStreams[email]) {
-      clearTimeout(activeStreams[email]);
-      delete activeStreams[email];
-    }
+    // 3. FINAL CLEANUP: Safely remove the tracking key from our memory dictionary
+    delete activeStreams[email];
 
     console.log(
       `🚫 Background scheduling loop permanently terminated for [${email}]. Data deleted.`,
@@ -225,10 +246,12 @@ app.delete("/api/unsubscribe", async (req, res) => {
     res.status(200).json({ success: true });
   } catch (error) {
     console.error("❌ Unsubscribe database execution error:", error.message);
-    res.status(500).json({
-      success: false,
-      error: "Failed to process cancel operation inside cloud databanks.",
-    });
+    res
+      .status(500)
+      .json({
+        success: false,
+        error: "Failed to process cancel operation inside cloud databanks.",
+      });
   }
 });
 
