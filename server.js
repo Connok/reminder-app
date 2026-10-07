@@ -120,17 +120,21 @@ app.post("/api/register", async (req, res) => {
   const { email, customText, minMinutes, maxMinutes } = req.body;
 
   if (!email || !customText || !minMinutes || !maxMinutes) {
-    return res.status(400).json({
-      success: false,
-      error: "All configuration inputs are required.",
-    });
+    return res
+      .status(400)
+      .json({
+        success: false,
+        error: "All configuration inputs are required.",
+      });
   }
 
   if (activeStreams[email]) {
-    return res.status(400).json({
-      success: false,
-      error: "An active alert stream is already running for this email!",
-    });
+    return res
+      .status(400)
+      .json({
+        success: false,
+        error: "An active alert stream is already running for this email!",
+      });
   }
 
   const parsedMin = parseInt(minMinutes);
@@ -147,31 +151,45 @@ app.post("/api/register", async (req, res) => {
       maxMinutes: parsedMax,
     });
 
-    // Welcoming email dispatched over API
-    await resend.emails.send({
-      from: "NudgeFlow <onboarding@resend.dev>",
-      to: email,
-      subject: "⚙️ Schedule Active!",
-      text: `Hello! Your custom NudgeFlow stream ("${customText}") has been activated and saved securely.`,
-    });
+    // ⚡ ISOLATED TRANSMISSION GATEWAY: If the email system fails, the server won't throw a 500 error!
+    try {
+      await resend.emails.send({
+        from: "NudgeFlow <onboarding@resend.dev>",
+        to: email,
+        subject: "⚙️ Schedule Active!",
+        text: `Hello! Your custom NudgeFlow stream ("${customText}") has been activated and saved securely.`,
+      });
+      console.log(`✉️ Validation welcome email sent successfully to ${email}`);
+    } catch (mailError) {
+      console.warn(
+        `⚠️ Warning: Database saved, but Resend API rejected email sending:`,
+        mailError.message,
+      );
+      // We do NOT crash the route here; we let the execution continue!
+    }
 
+    // Toggle tracking loop and initialize stream instance smoothly
     activeStreams[email] = true;
     startCustomAlertStream(email, customText, parsedMin, parsedMax);
 
+    // Reply back to your browser cleanly
     res.status(200).json({ success: true });
   } catch (error) {
-    console.error("❌ Registration routing error:", error.message);
+    console.error("❌ Deep Route registration error:", error.message);
     if (error.code === 11000) {
-      return res.status(400).json({
-        success: false,
-        error:
-          "Email configuration constraint violation: Profile already exists.",
-      });
+      return res
+        .status(400)
+        .json({
+          success: false,
+          error: "Profile constraints violation: Email already exists.",
+        });
     }
-    res.status(500).json({
-      success: false,
-      error: "Database persistence pipeline failure.",
-    });
+    res
+      .status(500)
+      .json({
+        success: false,
+        error: "Database persistence pipeline failure.",
+      });
   }
 });
 
