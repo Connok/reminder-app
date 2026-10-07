@@ -1,10 +1,9 @@
 const form = document.getElementById("registrationForm");
 const statusMessage = document.getElementById("statusMessage");
-
 const API_BASE_URL =
   window.location.hostname === "localhost" ||
   window.location.hostname === "127.0.0.1"
-    ? "" // Local staging defaults to relative paths
+    ? ""
     : "https://nudgeflow.onrender.com";
 
 form.addEventListener("submit", async (e) => {
@@ -26,12 +25,12 @@ form.addEventListener("submit", async (e) => {
   statusMessage.textContent = "⏳ Spawning your custom schedule...";
 
   try {
-    const response = await fetch(`${API_BASE_URL}/api/register`, {
+    const response = await fetch("/api/register", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         email: email,
-        customText: alertMessage, // Key matches backend parameter exactly
+        customText: alertMessage,
         minMinutes: minMinutes,
         maxMinutes: maxMinutes,
       }),
@@ -65,7 +64,8 @@ unsubForm.addEventListener("submit", async (e) => {
   unsubStatusMessage.textContent = "⏳ Processing removal request...";
 
   try {
-    const response = await fetch(`${API_BASE_URL}/api/unsubscribe`, {
+    // 🚀 FIX: Swapped to a relative path so it never hangs in the cloud
+    const response = await fetch("/api/unsubscribe", {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email: email }),

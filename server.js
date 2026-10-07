@@ -9,10 +9,10 @@ const PORT = process.env.PORT || 3000; // Render sets process.env.PORT automatic
 app.use(express.json());
 app.use(express.static("public"));
 
-// 1. OBJECT DICTIONARY TO HOLD LIVE RUNTIME TIMEOUT TIMERS
+//  OBJECT DICTIONARY TO HOLD LIVE RUNTIME TIMEOUT TIMERS
 let activeStreams = {};
 
-// 2. CONNECT TO CLOUD MONGO DATABASE
+//  CONNECT TO CLOUD MONGO DATABASE
 mongoose
   .connect(process.env.MONGO_URI)
   .then(async () => {
@@ -48,7 +48,7 @@ const transporter = nodemailer.createTransport({
   },
 });
 
-// 4. THE CUSTOM TIMER LOOP INJECTOR
+//  THE CUSTOM TIMER LOOP INJECTOR
 const startCustomAlertStream = (email, textMessage, minMin, maxMin) => {
   const runStreamCycle = async () => {
     // Defensive check: verify they still exist inside the live streaming tracking dictionary
@@ -64,7 +64,7 @@ const startCustomAlertStream = (email, textMessage, minMin, maxMin) => {
         `📡 [ACTIVE TRIGGER] Sending custom alert directly to: ${email}`,
       );
       await transporter.sendMail({
-        from: process.env.EMAIL_USER,
+        from: `"NudgeFlow Hub" <${process.env.EMAIL_USER}>`,
         to: email,
         subject: "⏰ Alert Hub Nudge!",
         text: `Reminder: ${textMessage}`,
@@ -98,7 +98,7 @@ const startCustomAlertStream = (email, textMessage, minMin, maxMin) => {
   activeStreams[email] = setTimeout(runStreamCycle, initialDelay);
 };
 
-// 5. BOOT-UP RECOVERY ENGINE
+//  BOOT-UP RECOVERY ENGINE
 const recoverActiveStreamsOnBoot = async () => {
   try {
     // Look into the database and pull every single active subscriber record
@@ -129,7 +129,7 @@ const recoverActiveStreamsOnBoot = async () => {
   }
 };
 
-// 6. WEB API REGISTRATION ROUTE (Writes to Cloud DB)
+//  WEB API REGISTRATION ROUTE (Writes to Cloud DB)
 app.post("/api/register", async (req, res) => {
   const { email, customText, minMinutes, maxMinutes } = req.body;
 
@@ -165,7 +165,7 @@ app.post("/api/register", async (req, res) => {
     });
 
     await transporter.sendMail({
-      from: process.env.EMAIL_USER,
+      from: `"NudgeFlow Hub" <${process.env.EMAIL_USER}>`,
       to: email,
       subject: "⚙️ Schedule Active!",
       text: `Hello! Your custom tracking stream ("${customText}") has been activated and saved to our database servers.`,
@@ -192,7 +192,6 @@ app.post("/api/register", async (req, res) => {
   }
 });
 
-// 7. 🟢 CLOUD-OPTIMIZED WEB API UNSUBSCRIBE ROUTE (Removes from Cloud DB & safely kills timers)
 app.delete("/api/unsubscribe", async (req, res) => {
   const { email } = req.body;
 
@@ -205,14 +204,14 @@ app.delete("/api/unsubscribe", async (req, res) => {
   try {
     console.log(`🗑️ Processing cloud unsubscribe pipeline for: ${email}`);
 
-    // 1. DEFENSIVE STEP: Instantly halt any active background clocks in memory first
+    //  DEFENSIVE STEP: Instantly halt any active background clocks in memory first
     if (activeStreams[email]) {
       clearTimeout(activeStreams[email]);
       // Set to false instead of deleting immediately so sleeping functions know to stop
       activeStreams[email] = false;
     }
 
-    // 2. DATABASE STEP: Pull the record completely out of MongoDB Atlas
+    //  DATABASE STEP: Pull the record completely out of MongoDB Atlas
     const deletedUser = await Subscriber.findOneAndDelete({ email: email });
 
     if (!deletedUser) {
@@ -224,7 +223,7 @@ app.delete("/api/unsubscribe", async (req, res) => {
       });
     }
 
-    // 3. FINAL CLEANUP: Safely remove the tracking key from our memory dictionary
+    //  FINAL CLEANUP: Safely remove the tracking key from our memory dictionary
     delete activeStreams[email];
 
     console.log(
@@ -232,7 +231,7 @@ app.delete("/api/unsubscribe", async (req, res) => {
     );
 
     await transporter.sendMail({
-      from: process.env.EMAIL_USER,
+      from: `"NudgeFlow Hub" <${process.env.EMAIL_USER}>`,
       to: email,
       subject: "🚫 Alerts Cancelled",
       text: "Hello! This email confirms that your custom reminder scheduling stream has been permanently removed from our active database servers.",
