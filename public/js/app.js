@@ -26,7 +26,7 @@ form.addEventListener("submit", async (e) => {
   statusMessage.textContent = "⏳ Spawning your custom schedule...";
 
   try {
-    const response = await fetch("/api/register", {
+    const response = await fetch(`${API_BASE_URL}/api/register`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -65,7 +65,7 @@ unsubForm.addEventListener("submit", async (e) => {
   unsubStatusMessage.textContent = "⏳ Processing removal request...";
 
   try {
-    const response = await fetch("/api/unsubscribe", {
+    const response = await fetch(`${API_BASE_URL}/api/unsubscribe`, {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email: email }),
