@@ -36,10 +36,15 @@ const Subscriber = mongoose.model("Subscriber", subscriberSchema);
 
 // Configure your secure Gmail transmitter
 const transporter = nodemailer.createTransport({
-  service: "gmail",
+  host: "smtp.gmail.com",
+  porty: 465,
+  secure: true,
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS,
+  },
+  tls: {
+    rejectUnauthorized: false, // Allow self-signed certificates
   },
 });
 
@@ -129,21 +134,17 @@ app.post("/api/register", async (req, res) => {
   const { email, customText, minMinutes, maxMinutes } = req.body;
 
   if (!email || !customText || !minMinutes || !maxMinutes) {
-    return res
-      .status(400)
-      .json({
-        success: false,
-        error: "All configuration inputs are required.",
-      });
+    return res.status(400).json({
+      success: false,
+      error: "All configuration inputs are required.",
+    });
   }
 
   if (activeStreams[email]) {
-    return res
-      .status(400)
-      .json({
-        success: false,
-        error: "An active alert stream is already running for this email!",
-      });
+    return res.status(400).json({
+      success: false,
+      error: "An active alert stream is already running for this email!",
+    });
   }
 
   // Convert text inputs into clean whole numbers before sending them to the timer engine
@@ -178,20 +179,16 @@ app.post("/api/register", async (req, res) => {
   } catch (error) {
     console.error("❌ Registration routing error:", error.message);
     if (error.code === 11000) {
-      return res
-        .status(400)
-        .json({
-          success: false,
-          error:
-            "Email configuration constraint violation: Profile already exists.",
-        });
-    }
-    res
-      .status(500)
-      .json({
+      return res.status(400).json({
         success: false,
-        error: "Database persistence pipeline failure.",
+        error:
+          "Email configuration constraint violation: Profile already exists.",
       });
+    }
+    res.status(500).json({
+      success: false,
+      error: "Database persistence pipeline failure.",
+    });
   }
 });
 
@@ -221,12 +218,10 @@ app.delete("/api/unsubscribe", async (req, res) => {
     if (!deletedUser) {
       // Clean up memory slot if user wasn't in DB
       delete activeStreams[email];
-      return res
-        .status(404)
-        .json({
-          success: false,
-          error: "No database record matching that subscriber email found.",
-        });
+      return res.status(404).json({
+        success: false,
+        error: "No database record matching that subscriber email found.",
+      });
     }
 
     // 3. FINAL CLEANUP: Safely remove the tracking key from our memory dictionary
@@ -246,12 +241,10 @@ app.delete("/api/unsubscribe", async (req, res) => {
     res.status(200).json({ success: true });
   } catch (error) {
     console.error("❌ Unsubscribe database execution error:", error.message);
-    res
-      .status(500)
-      .json({
-        success: false,
-        error: "Failed to process cancel operation inside cloud databanks.",
-      });
+    res.status(500).json({
+      success: false,
+      error: "Failed to process cancel operation inside cloud databanks.",
+    });
   }
 });
 
