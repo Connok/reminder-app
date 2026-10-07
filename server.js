@@ -1,30 +1,32 @@
 require("dotenv").config();
 const express = require("express");
-const nodemailer = require("nodemailer");
-const mongoose = require("mongoose"); // Load Mongoose database driver
+const mongoose = require("mongoose");
+const { Resend } = require("resend"); // Load the Resend API module
 
 const app = express();
-const PORT = process.env.PORT || 3000; // Render sets process.env.PORT automatically
+const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
 app.use(express.static("public"));
 
-//  OBJECT DICTIONARY TO HOLD LIVE RUNTIME TIMEOUT TIMERS
+// Live background loop tracking dictionary
 let activeStreams = {};
 
-//  CONNECT TO CLOUD MONGO DATABASE
+// Initialize Resend with your secure cloud environment variable key
+const resend = new Resend(process.env.RESEND_API_KEY);
+
+// Connect to MongoDB Atlas
 mongoose
   .connect(process.env.MONGO_URI)
   .then(async () => {
     console.log("🍃 MongoDB Cloud Database Connected Successfully.");
-    // 🚀 FAULT TOLERANCE BOOT-UP: Automatically respawn active loops on boot
     await recoverActiveStreamsOnBoot();
   })
   .catch((err) =>
     console.error("❌ Cloud Database connection failure:", err.message),
   );
 
-// 3. DEFINE THE PORTFOLIO DATA SCHEMA
+// Persistent Subscriber Schema Mappings
 const subscriberSchema = new mongoose.Schema({
   email: { type: String, required: true, unique: true },
   customText: { type: String, required: true },
@@ -34,24 +36,9 @@ const subscriberSchema = new mongoose.Schema({
 });
 const Subscriber = mongoose.model("Subscriber", subscriberSchema);
 
-// Configure your secure Gmail transmitter
-const transporter = nodemailer.createTransport({
-  host: "smtp.gmail.com",
-  porty: 465,
-  secure: true,
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS,
-  },
-  tls: {
-    rejectUnauthorized: false, // Allow self-signed certificates
-  },
-});
-
-//  THE CUSTOM TIMER LOOP INJECTOR
+// Dynamic isolated timer loop cycle controller
 const startCustomAlertStream = (email, textMessage, minMin, maxMin) => {
   const runStreamCycle = async () => {
-    // Defensive check: verify they still exist inside the live streaming tracking dictionary
     if (!activeStreams[email]) {
       console.log(
         `🛑 Stream loop execution halted for [${email}] (Unsubscribed).`,
@@ -63,12 +50,15 @@ const startCustomAlertStream = (email, textMessage, minMin, maxMin) => {
       console.log(
         `📡 [ACTIVE TRIGGER] Sending custom alert directly to: ${email}`,
       );
-      await transporter.sendMail({
-        from: `"NudgeFlow Hub" <${process.env.EMAIL_USER}>`,
+
+      //  Clean, modern API call that passes smoothly over Render's web ports
+      await resend.emails.send({
+        from: "NudgeFlow <onboarding@resend.dev>", // Free tier default verified testing sender
         to: email,
-        subject: "⏰ Alert Hub Nudge!",
+        subject: "⏰ NudgeFlow Alert!",
         text: `Reminder: ${textMessage}`,
       });
+
       console.log(`✅ Custom alert successfully received by ${email}`);
     } catch (error) {
       console.error(
@@ -76,7 +66,6 @@ const startCustomAlertStream = (email, textMessage, minMin, maxMin) => {
         error.message,
       );
     } finally {
-      // Check again if they unsubscribed during the email transmission
       if (!activeStreams[email]) return;
 
       const randomMs =
@@ -98,12 +87,10 @@ const startCustomAlertStream = (email, textMessage, minMin, maxMin) => {
   activeStreams[email] = setTimeout(runStreamCycle, initialDelay);
 };
 
-//  BOOT-UP RECOVERY ENGINE
+// Automatic fault tolerance boot recovery helper
 const recoverActiveStreamsOnBoot = async () => {
   try {
-    // Look into the database and pull every single active subscriber record
     const activeUsers = await Subscriber.find({});
-
     if (activeUsers.length === 0) {
       console.log(
         "ℹ️ Staging Server check: No active subscriber profiles stored in database collections.",
@@ -114,9 +101,8 @@ const recoverActiveStreamsOnBoot = async () => {
     console.log(
       `🔄 System Recovery: Found ${activeUsers.length} subscribers in cloud collections. Re-initializing streams...`,
     );
-
     for (const user of activeUsers) {
-      activeStreams[user.email] = true; // Allocate a key inside tracking pointer
+      activeStreams[user.email] = true;
       startCustomAlertStream(
         user.email,
         user.customText,
@@ -129,7 +115,7 @@ const recoverActiveStreamsOnBoot = async () => {
   }
 };
 
-//  WEB API REGISTRATION ROUTE (Writes to Cloud DB)
+// REGISTER NEW REMINDER (POST)
 app.post("/api/register", async (req, res) => {
   const { email, customText, minMinutes, maxMinutes } = req.body;
 
@@ -147,7 +133,6 @@ app.post("/api/register", async (req, res) => {
     });
   }
 
-  // Convert text inputs into clean whole numbers before sending them to the timer engine
   const parsedMin = parseInt(minMinutes);
   const parsedMax = parseInt(maxMinutes);
 
@@ -155,8 +140,6 @@ app.post("/api/register", async (req, res) => {
     console.log(
       `🍃 Database operation: Writing new subscriber record for ${email}`,
     );
-
-    // Save user settings directly into MongoDB Cloud Collections
     await Subscriber.create({
       email,
       customText,
@@ -164,14 +147,14 @@ app.post("/api/register", async (req, res) => {
       maxMinutes: parsedMax,
     });
 
-    await transporter.sendMail({
-      from: `"NudgeFlow Hub" <${process.env.EMAIL_USER}>`,
+    // Welcoming email dispatched over API
+    await resend.emails.send({
+      from: "NudgeFlow <onboarding@resend.dev>",
       to: email,
       subject: "⚙️ Schedule Active!",
-      text: `Hello! Your custom tracking stream ("${customText}") has been activated and saved to our database servers.`,
+      text: `Hello! Your custom NudgeFlow stream ("${customText}") has been activated and saved securely.`,
     });
 
-    // Toggle tracking loop and initialize stream instance
     activeStreams[email] = true;
     startCustomAlertStream(email, customText, parsedMin, parsedMax);
 
@@ -192,6 +175,7 @@ app.post("/api/register", async (req, res) => {
   }
 });
 
+// CANCEL ACTIVE REMINDER (DELETE)
 app.delete("/api/unsubscribe", async (req, res) => {
   const { email } = req.body;
 
@@ -204,18 +188,14 @@ app.delete("/api/unsubscribe", async (req, res) => {
   try {
     console.log(`🗑️ Processing cloud unsubscribe pipeline for: ${email}`);
 
-    //  DEFENSIVE STEP: Instantly halt any active background clocks in memory first
     if (activeStreams[email]) {
       clearTimeout(activeStreams[email]);
-      // Set to false instead of deleting immediately so sleeping functions know to stop
       activeStreams[email] = false;
     }
 
-    //  DATABASE STEP: Pull the record completely out of MongoDB Atlas
     const deletedUser = await Subscriber.findOneAndDelete({ email: email });
 
     if (!deletedUser) {
-      // Clean up memory slot if user wasn't in DB
       delete activeStreams[email];
       return res.status(404).json({
         success: false,
@@ -223,18 +203,17 @@ app.delete("/api/unsubscribe", async (req, res) => {
       });
     }
 
-    //  FINAL CLEANUP: Safely remove the tracking key from our memory dictionary
     delete activeStreams[email];
-
     console.log(
       `🚫 Background scheduling loop permanently terminated for [${email}]. Data deleted.`,
     );
 
-    await transporter.sendMail({
-      from: `"NudgeFlow Hub" <${process.env.EMAIL_USER}>`,
+    // Cancellation email dispatched over API
+    await resend.emails.send({
+      from: "NudgeFlow <onboarding@resend.dev>",
       to: email,
       subject: "🚫 Alerts Cancelled",
-      text: "Hello! This email confirms that your custom reminder scheduling stream has been permanently removed from our active database servers.",
+      text: "Hello! This email confirms that your custom reminder scheduling stream has been permanently deactivated.",
     });
 
     res.status(200).json({ success: true });
